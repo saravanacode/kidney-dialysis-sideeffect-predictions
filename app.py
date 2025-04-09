@@ -744,7 +744,40 @@ def save_patient_data(patient_id, age, gender, weight, bmi, diabetes, hypertensi
         "Recent_Food_Intake": recent_food_intake
     }
     
-        
+    # Convert to DataFrame for model input
+    patient_df = pd.DataFrame([data])
+    
+    # Check if file exists
+    file_exists = os.path.isfile('dialysis_patient_data.csv')
+    
+    # Save to CSV file
+    patient_df.to_csv('dialysis_patient_data.csv', mode='a', header=not file_exists, index=False)
+    
+    # Get predictions for the patient
+    predictions = predict_side_effects(patient_df)
+    prediction_html = format_prediction_results(predictions)
+    
+    # Create predictions dataframe
+    prediction_data = {
+        "BatchID": entry_id,
+        "Timestamp": timestamp,
+        "PatientID": patient_id,
+        "Predicted_Side_Effects": predictions["side_effects"],
+        "Predicted_Severity": predictions["severity"],
+        "Predicted_Timing": predictions["timing"],
+        "Predicted_Intervention_Required": predictions["intervention_required"]
+    }
+    
+    # Create predictions DataFrame
+    predictions_df = pd.DataFrame([prediction_data])
+    
+    # Check if predictions file exists
+    predictions_file_exists = os.path.isfile('dialysis_predictions.csv')
+    
+    # Save predictions to CSV
+    predictions_df.to_csv('dialysis_predictions.csv', mode='a', header=not predictions_file_exists, index=False)
+    
+    return f"SUCCESS: Patient data saved with ID: {patient_id}", prediction_html
 
 def process_uploaded_csv(csv_file):
     """
@@ -1205,4 +1238,4 @@ with gr.Blocks(title="Dialysis Patient Data Collection") as demo:
         )
 
 # Launch the app
-demo.launch(share=True)
+demo.launch()
