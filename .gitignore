@@ -1,1 +1,4 @@
 *.pkl
+.env
+__pycache__/
+*.csv

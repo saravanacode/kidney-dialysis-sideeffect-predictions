@@ -8,6 +8,11 @@ import joblib
 import json
 import requests
 import re
+from openai import OpenAI
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 # Setup logging for debugging
 logging.basicConfig(level=logging.DEBUG, 
@@ -164,8 +169,17 @@ def predict_side_effects(patient_data):
         Dictionary with predictions and recommendations
     """
     try:
-        api_key = "AIzaSyAxT6yokT8BNrm_Kg8Vlhh2Mh6qijcYDL4"
-        model = "gemini-pro"
+        api_key = os.getenv("GROQ_API_KEY")
+        client = None
+        if not api_key:
+            logger.warning("GROQ_API_KEY not found in environment variables")
+        else:
+            client = OpenAI(
+                api_key=api_key,
+                base_url="https://api.groq.com/openai/v1",
+            )
+            
+        model_name = "llama-3.3-70b-versatile"
         # Load the models and preprocessors
         preprocessor = joblib.load("dialysis_preprocessor.pkl")
         side_effect_model = joblib.load("side_effect_model.pkl")
@@ -417,41 +431,21 @@ def predict_side_effects(patient_data):
         Format your response in markdown with clear sections.
         """
 
-        model = "gemini-1.5-flash-latest"
-
-# And where you define the URL:
-        gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
-        data = {
-            "contents": [
-                {
-                    "parts": [
-                        {
-                            "text": prompt
-                        }
-                    ]
-                }
-            ],
-            "generationConfig": {
-                "temperature": 0.7,
-                "topP": 0.95,
-                "topK": 40
-            }
-        }
-
         try:
-            response = requests.post(
-                gemini_url,
-                headers={"Content-Type": "application/json"},
-                data=json.dumps(data)
+            if not client:
+                raise ValueError("GROQ_API_KEY not found or client not initialized")
+                
+            response = client.chat.completions.create(
+                model=model_name,
+                messages=[
+                    {"role": "system", "content": "You are an AI medical assistant specializing in nephrology and dialysis treatment."},
+                    {"role": "user", "content": prompt}
+                ]
             )
-            response.raise_for_status()  # Raise an exception for HTTP errors
-
-            # Extract the response content
-            response_data = response.json()
             
-            # Extract the text from the response
-            recommendation_text = response_data["candidates"][0]["content"]["parts"][0]["text"]
+            recommendation_text = response.choices[0].message.content
             logger.info("AI Recommendations: %s", recommendation_text)
+            
             # Return the complete results
             result = {
                 "side_effects": predicted_side_effects,
@@ -463,30 +457,15 @@ def predict_side_effects(patient_data):
 
             return result
 
-        except requests.exceptions.RequestException as e:
-            logger.error(f"API request failed: {str(e)}")
+        except Exception as e:
+            logger.error(f"Groq API error: {str(e)}")
             # Return just the predictions if API call fails
             return {
                 "side_effects": predicted_side_effects,
                 "severity": predicted_severity,
                 "timing": predicted_timing,
-                "intervention_required": "Yes"
-            }
-        except (KeyError, IndexError) as e:
-            logger.error(f"Failed to parse API response: {str(e)}")
-            return {
-                "side_effects": predicted_side_effects,
-                "severity": predicted_severity,
-                "timing": predicted_timing,
-                "intervention_required": predicted_intervention
-            }
-        except Exception as e:
-            logger.error(f"Unexpected error in API request: {str(e)}")
-            return {
-                "side_effects": predicted_side_effects,
-                "severity": predicted_severity,
-                "timing": predicted_timing,
-                "intervention_required": predicted_intervention
+                "intervention_required": predicted_intervention,
+                "ai_recommendations": "AI recommendations unavailable due to API error."
             }
 
     except Exception as e:
@@ -1235,6 +1214,15 @@ with gr.Blocks(title="Dialysis Patient Data Collection") as demo:
             fn=generate_dashboard,
             inputs=[],
             outputs=[dashboard_display]
+        )
+
+        # Add trademark footer
+        gr.Markdown(
+            """
+            <div style="text-align: center; margin-top: 20px; color: #888;">
+                <p>™ Data Refreshed: Feb 2026</p>
+            </div>
+            """
         )
 
 # Launch the app

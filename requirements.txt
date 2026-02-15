@@ -8,3 +8,8 @@ lightgbm
 xgboost
 joblib
 requests
+
+google-generativeai
+python-dotenv
+
+openai
