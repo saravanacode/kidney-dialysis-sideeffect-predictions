@@ -871,9 +871,57 @@ def process_uploaded_csv(csv_file):
         return f"ERROR: Processing CSV failed: {str(e)}", ""
 
 # Create Gradio UI
-with gr.Blocks(title="Dialysis Patient Data Collection") as demo:
+with gr.Blocks(title="Dialysis Patient Data Collection", css="""
+    .current-time {
+        position: fixed;
+        top: 10px;
+        right: 10px;
+        background-color: #2d2d2d;
+        color: #ffffff;
+        padding: 10px 15px;
+        border-radius: 8px;
+        border: 1px solid #555;
+        font-size: 14px;
+        font-weight: bold;
+        z-index: 1000;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+    }
+    @media (prefers-color-scheme: light) {
+        .current-time {
+            background-color: #f8f9fa;
+            color: #2c3e50;
+            border: 1px solid #ddd;
+        }
+    }
+""", js="""
+    function updateTime() {
+        const now = new Date();
+        const timeString = now.getFullYear() + '-' + 
+            String(now.getMonth() + 1).padStart(2, '0') + '-' + 
+            String(now.getDate()).padStart(2, '0') + ' ' + 
+            String(now.getHours()).padStart(2, '0') + ':' + 
+            String(now.getMinutes()).padStart(2, '0') + ':' + 
+            String(now.getSeconds()).padStart(2, '0');
+        
+        const timeElement = document.getElementById('current-time');
+        if (timeElement) {
+            timeElement.innerHTML = '🕒 ' + timeString;
+        }
+    }
+    
+    // Update time immediately and then every second
+    updateTime();
+    setInterval(updateTime, 1000);
+""") as demo:
     gr.Markdown("# Dialysis Patient Data Collection and Side Effect Prediction")
     gr.Markdown("Enter patient data across all tabs, then submit using the button at the bottom.")
+    
+    # Add current time display in top right corner
+    current_time_display = gr.HTML("""
+        <div class="current-time" id="current-time">
+            🕒 Loading...
+        </div>
+    """)
     
     # Add tab for prediction history
     with gr.Tab("Data Entry"):
@@ -1131,62 +1179,226 @@ with gr.Blocks(title="Dialysis Patient Data Collection") as demo:
                     for _, row in severity_df.iterrows():
                         severity_counts[row['Severity']] = row['Count']
                 
-                # Format dashboard HTML
+                # Additional demographic and clinical statistics
+                avg_age = patient_df['Age'].mean() if 'Age' in patient_df.columns else 0
+                gender_dist = patient_df['Gender'].value_counts().to_dict() if 'Gender' in patient_df.columns else {}
+                diabetes_count = patient_df['Diabetes'].value_counts().get('Yes', 0) if 'Diabetes' in patient_df.columns else 0
+                hypertension_count = patient_df['Hypertension'].value_counts().get('Yes', 0) if 'Hypertension' in patient_df.columns else 0
+                
+                # Dialysis parameters statistics
+                avg_ktv = patient_df['KtV'].mean() if 'KtV' in patient_df.columns else 0
+                avg_urr = patient_df['URR'].mean() if 'URR' in patient_df.columns else 0
+                avg_dialysis_duration = patient_df['Dialysis_Duration_Hours'].mean() if 'Dialysis_Duration_Hours' in patient_df.columns else 0
+                
+                # Blood pressure statistics
+                avg_systolic = []
+                avg_diastolic = []
+                if 'Pre_Dialysis_Blood_Pressure' in patient_df.columns:
+                    for bp in patient_df['Pre_Dialysis_Blood_Pressure']:
+                        if isinstance(bp, str) and '/' in bp:
+                            try:
+                                systolic, diastolic = bp.split('/')
+                                avg_systolic.append(float(systolic))
+                                avg_diastolic.append(float(diastolic))
+                            except ValueError:
+                                continue
+                
+                avg_systolic = sum(avg_systolic) / len(avg_systolic) if avg_systolic else 0
+                avg_diastolic = sum(avg_diastolic) / len(avg_diastolic) if avg_diastolic else 0
+                
+                # Lab values statistics
+                avg_creatinine = patient_df['Creatinine'].mean() if 'Creatinine' in patient_df.columns else 0
+                avg_hemoglobin = patient_df['Hemoglobin'].mean() if 'Hemoglobin' in patient_df.columns else 0
+                avg_potassium = patient_df['Potassium'].mean() if 'Potassium' in patient_df.columns else 0
+                
+                # Recent activity
+                recent_records = 0
+                if 'Timestamp' in patient_df.columns:
+                    recent_date = datetime.datetime.now() - datetime.timedelta(days=7)
+                    for timestamp in patient_df['Timestamp']:
+                        try:
+                            record_date = pd.to_datetime(timestamp)
+                            if record_date >= recent_date:
+                                recent_records += 1
+                        except (ValueError, pd.errors.ParserError):
+                            continue
+                
+                # Format dashboard HTML with dark mode optimization
                 html = """
-                <div style="padding: 20px; background-color: #f9f9f9; border-radius: 10px;">
-                    <h2 style="color: #2c3e50; text-align: center;">Dialysis Monitoring Dashboard</h2>
+                <div style="padding: 20px; background-color: #1a1a1a; border-radius: 10px; color: #ffffff;">
+                    <h2 style="color: #ffffff; text-align: center;">Dialysis Monitoring Dashboard</h2>
                     
-                    <div style="display: flex; justify-content: space-around; margin-bottom: 20px;">
-                        <div style="background-color: white; padding: 15px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); width: 45%;">
-                            <h3 style="color: #3498db; margin-top: 0;">Patient Statistics</h3>
-                            <p><strong>Total Patients:</strong> {total_patients}</p>
-                            <p><strong>Total Records:</strong> {total_records}</p>
+                    <!-- Top Row: Key Metrics -->
+                    <div style="display: flex; justify-content: space-around; margin-bottom: 20px; flex-wrap: wrap;">
+                        <div style="background-color: #2d2d2d; padding: 15px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.3); width: 23%; min-width: 200px; margin: 5px; border: 1px solid #444;">
+                            <h4 style="color: #4fc3f7; margin-top: 0;">📊 Total Patients</h4>
+                            <p style="font-size: 24px; font-weight: bold; color: #ffffff;">{total_patients}</p>
+                            <p style="font-size: 12px; color: #b0b0b0;">{total_records} total records</p>
                         </div>
                         
-                        <div style="background-color: white; padding: 15px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); width: 45%;">
-                            <h3 style="color: #e74c3c; margin-top: 0;">Side Effect Severity</h3>
-                """.format(total_patients=total_patients, total_records=total_records)
+                        <div style="background-color: #2d2d2d; padding: 15px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.3); width: 23%; min-width: 200px; margin: 5px; border: 1px solid #444;">
+                            <h4 style="color: #ff6b6b; margin-top: 0;">🚨 High Risk Cases</h4>
+                            <p style="font-size: 24px; font-weight: bold; color: #ff6b6b;">{high_risk}</p>
+                            <p style="font-size: 12px; color: #b0b0b0;">Severe side effects</p>
+                        </div>
+                        
+                        <div style="background-color: #2d2d2d; padding: 15px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.3); width: 23%; min-width: 200px; margin: 5px; border: 1px solid #444;">
+                            <h4 style="color: #4caf50; margin-top: 0;">📈 Recent Activity</h4>
+                            <p style="font-size: 24px; font-weight: bold; color: #4caf50;">{recent_records}</p>
+                            <p style="font-size: 12px; color: #b0b0b0;">Last 7 days</p>
+                        </div>
+                        
+                        <div style="background-color: #2d2d2d; padding: 15px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.3); width: 23%; min-width: 200px; margin: 5px; border: 1px solid #444;">
+                            <h4 style="color: #ff9800; margin-top: 0;">⚠️ Intervention Rate</h4>
+                            <p style="font-size: 24px; font-weight: bold; color: #ff9800;">{intervention_rate}%</p>
+                            <p style="font-size: 12px; color: #b0b0b0;">Need staff help</p>
+                        </div>
+                    </div>
+                    
+                    <!-- Second Row: Demographics and Clinical -->
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 20px; flex-wrap: wrap;">
+                        <div style="background-color: #2d2d2d; padding: 15px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.3); width: 48%; min-width: 300px; margin: 5px; border: 1px solid #444;">
+                            <h3 style="color: #ba68c8; margin-top: 0;">👥 Patient Demographics</h3>
+                            <div style="display: flex; justify-content: space-around; text-align: center;">
+                                <div>
+                                    <p style="font-size: 18px; font-weight: bold; color: #ffffff;">{avg_age:.1f}</p>
+                                    <p style="font-size: 12px; color: #b0b0b0;">Average Age</p>
+                                </div>
+                                <div>
+                                    <p style="font-size: 18px; font-weight: bold; color: #ffffff;">{male_count}</p>
+                                    <p style="font-size: 12px; color: #b0b0b0;">Male Patients</p>
+                                </div>
+                                <div>
+                                    <p style="font-size: 18px; font-weight: bold; color: #ffffff;">{female_count}</p>
+                                    <p style="font-size: 12px; color: #b0b0b0;">Female Patients</p>
+                                </div>
+                            </div>
+                            <div style="margin-top: 15px;">
+                                <p style="color: #ffffff;"><strong>🩺 Diabetes:</strong> {diabetes_count} patients ({diabetes_percent:.1f}%)</p>
+                                <p style="color: #ffffff;"><strong>💔 Hypertension:</strong> {hypertension_count} patients ({hypertension_percent:.1f}%)</p>
+                            </div>
+                        </div>
+                        
+                        <div style="background-color: #2d2d2d; padding: 15px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.3); width: 48%; min-width: 300px; margin: 5px; border: 1px solid #444;">
+                            <h3 style="color: #26a69a; margin-top: 0;">🏥 Clinical Parameters</h3>
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                                <div>
+                                    <p style="color: #ffffff;"><strong>💉 Avg KtV:</strong> {avg_ktv:.2f}</p>
+                                    <p style="color: #ffffff;"><strong>📊 Avg URR:</strong> {avg_urr:.1f}%</p>
+                                    <p style="color: #ffffff;"><strong>⏱️ Avg Duration:</strong> {avg_dialysis_duration:.1f} hrs</p>
+                                </div>
+                                <div>
+                                    <p style="color: #ffffff;"><strong>🩸 Avg Creatinine:</strong> {avg_creatinine:.1f} mg/dL</p>
+                                    <p style="color: #ffffff;"><strong>🔴 Avg Hemoglobin:</strong> {avg_hemoglobin:.1f} g/dL</p>
+                                    <p style="color: #ffffff;"><strong>⚡ Avg Potassium:</strong> {avg_potassium:.1f} mEq/L</p>
+                                </div>
+                            </div>
+                            <div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #444;">
+                                <p style="color: #ffffff;"><strong>🩺 Avg BP:</strong> {avg_systolic:.0f}/{avg_diastolic:.0f} mmHg</p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Third Row: Side Effects Analysis -->
+                    <div style="background-color: #2d2d2d; padding: 15px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.3); margin-bottom: 20px; border: 1px solid #444;">
+                        <h3 style="color: #ff7043; margin-top: 0;">⚕️ Side Effects Analysis</h3>
+                        <div style="display: flex; justify-content: space-between; flex-wrap: wrap;">
+                            <div style="width: 48%; min-width: 250px;">
+                                <h4 style="color: #ffffff;">Severity Distribution</h4>
+                """.format(
+                    total_patients=total_patients, 
+                    total_records=total_records,
+                    high_risk=severity_counts.get('Severe', 0),
+                    recent_records=recent_records,
+                    intervention_rate=int(predictions_df[predictions_df['Predicted_Intervention_Required'] == 'Yes'].shape[0] / len(predictions_df) * 100) if 'Predicted_Intervention_Required' in predictions_df.columns else 0,
+                    avg_age=avg_age,
+                    male_count=gender_dist.get('Male', 0),
+                    female_count=gender_dist.get('Female', 0),
+                    diabetes_count=diabetes_count,
+                    diabetes_percent=(diabetes_count / total_patients * 100) if total_patients > 0 else 0,
+                    hypertension_count=hypertension_count,
+                    hypertension_percent=(hypertension_count / total_patients * 100) if total_patients > 0 else 0,
+                    avg_ktv=avg_ktv,
+                    avg_urr=avg_urr,
+                    avg_dialysis_duration=avg_dialysis_duration,
+                    avg_creatinine=avg_creatinine,
+                    avg_hemoglobin=avg_hemoglobin,
+                    avg_potassium=avg_potassium,
+                    avg_systolic=avg_systolic,
+                    avg_diastolic=avg_diastolic
+                )
                 
                 # Add severity chart (simple HTML version)
                 for severity, count in severity_counts.items():
-                    color = '#e74c3c' if severity == 'Severe' else '#f39c12' if severity == 'Moderate' else '#27ae60'
+                    color = '#ff6b6b' if severity == 'Severe' else '#ff9800' if severity == 'Moderate' else '#4caf50'
                     percent = count / len(predictions_df) * 100
                     html += f"""
                             <div style="margin-bottom: 10px;">
-                                <span style="color: {color};">{severity}</span>: {count} ({percent:.1f}%)
-                                <div style="background-color: #ecf0f1; height: 10px; border-radius: 5px; margin-top: 5px;">
+                                <span style="color: {color}; font-weight: bold;">{severity}</span>: {count} ({percent:.1f}%)
+                                <div style="background-color: #444; height: 10px; border-radius: 5px; margin-top: 5px;">
                                     <div style="background-color: {color}; width: {percent}%; height: 10px; border-radius: 5px;"></div>
                                 </div>
                             </div>
                     """
                 
                 html += """
+                            </div>
+                            <div style="width: 48%; min-width: 250px;">
+                                <h4 style="color: #ffffff;">Most Common Side Effects</h4>
+                """
+                
+                # Add top side effects with counts
+                for effect, count in sorted(side_effect_counts.items(), key=lambda x: x[1], reverse=True)[:5]:
+                    if effect and effect != "None":
+                        percent = count / len(predictions_df) * 100
+                        html += f"""
+                                <div style="margin-bottom: 8px; padding: 8px; background-color: #333; border-radius: 5px; border-left: 4px solid #4fc3f7;">
+                                    <strong style="color: #ffffff;">{effect}</strong>: <span style="color: #4fc3f7;">{count}</span> cases ({percent:.1f}%)
+                                </div>
+                        """
+                
+                html += """
+                            </div>
                         </div>
                     </div>
                     
-                    <div style="background-color: white; padding: 15px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); margin-bottom: 20px;">
-                        <h3 style="color: #9b59b6; margin-top: 0;">Common Side Effects</h3>
+                    <!-- Fourth Row: Common Side Effects Tags -->
+                    <div style="background-color: #2d2d2d; padding: 15px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.3); margin-bottom: 20px; border: 1px solid #444;">
+                        <h3 style="color: #ba68c8; margin-top: 0;">🏷️ All Side Effects</h3>
                         <div style="display: flex; flex-wrap: wrap; gap: 10px;">
                 """
                 
                 # Add side effect tags
-                for effect, count in sorted(side_effect_counts.items(), key=lambda x: x[1], reverse=True)[:8]:
+                for effect, count in sorted(side_effect_counts.items(), key=lambda x: x[1], reverse=True)[:12]:
                     if effect and effect != "None":
+                        # Color code based on frequency
+                        if count >= 5:
+                            bg_color = '#4a2c2a'  # Dark red for high frequency
+                            text_color = '#ff8a80'
+                        elif count >= 3:
+                            bg_color = '#3e2723'  # Dark orange for medium frequency
+                            text_color = '#ffab40'
+                        else:
+                            bg_color = '#1b5e20'  # Dark green for low frequency
+                            text_color = '#69f0ae'
+                        
                         html += f"""
-                            <div style="background-color: #e8e8e8; padding: 8px 12px; border-radius: 20px; font-size: 14px;">
-                                {effect} ({count})
+                            <div style="background-color: {bg_color}; color: {text_color}; padding: 8px 12px; border-radius: 20px; font-size: 14px; border: 1px solid #555;">
+                                <strong>{effect}</strong> ({count})
                             </div>
                         """
                 
-                html += """
+                html += f"""
                         </div>
                     </div>
                     
-                    <div style="text-align: center; color: #7f8c8d; font-size: 12px;">
-                        Last updated: {timestamp}
+                    <!-- Footer with current timestamp -->
+                    <div style="text-align: center; color: #b0b0b0; font-size: 12px; margin-top: 20px;">
+                        <p>📊 Last updated: {datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}</p>
+                        <p>🔄 Auto-refresh every 30 seconds</p>
                     </div>
                 </div>
-                """.format(timestamp=datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+                """
                 
                 return html
             except Exception as e:
@@ -1216,11 +1428,184 @@ with gr.Blocks(title="Dialysis Patient Data Collection") as demo:
             outputs=[dashboard_display]
         )
 
-        # Add trademark footer
+    # Add a tab for individual patient details
+    with gr.Tab("Patient Details"):
+        # Function to get all patients with their details
+        def get_patient_details():
+            try:
+                if not os.path.exists('dialysis_patient_data.csv') or not os.path.exists('dialysis_predictions.csv'):
+                    return "<p>No patient data available yet.</p>"
+                
+                patient_df = pd.read_csv('dialysis_patient_data.csv')
+                predictions_df = pd.read_csv('dialysis_predictions.csv')
+                
+                if len(patient_df) == 0 or len(predictions_df) == 0:
+                    return "<p>No patient records found.</p>"
+                
+                # Sort by timestamp (most recent first)
+                if 'Timestamp' in patient_df.columns:
+                    patient_df = patient_df.sort_values('Timestamp', ascending=False)
+                
+                # Merge patient data with predictions
+                if 'BatchID' in patient_df.columns and 'BatchID' in predictions_df.columns:
+                    merged_df = pd.merge(patient_df, predictions_df, on='BatchID', how='left')
+                else:
+                    # If no BatchID, try to merge by index
+                    merged_df = patient_df.copy()
+                    if len(predictions_df) > 0:
+                        merged_df['Predicted_Side_Effects'] = predictions_df['Predicted_Side_Effects'].iloc[:len(merged_df)].values
+                        merged_df['Predicted_Severity'] = predictions_df['Predicted_Severity'].iloc[:len(merged_df)].values
+                        merged_df['Predicted_Timing'] = predictions_df['Predicted_Timing'].iloc[:len(merged_df)].values
+                        merged_df['Predicted_Intervention_Required'] = predictions_df['Predicted_Intervention_Required'].iloc[:len(merged_df)].values
+                
+                html = f"""
+                <div style="padding: 20px; background-color: #1a1a1a; color: #ffffff;">
+                    <h2 style="color: #ffffff; text-align: center; margin-bottom: 30px;">📋 Individual Patient Details</h2>
+                """
+                
+                # Generate detailed cards for each patient
+                for index, patient in merged_df.iterrows():
+                    patient_id = patient.get('PatientID', f'Patient_{index+1}')
+                    timestamp = patient.get('Timestamp', 'Unknown')
+                    age = patient.get('Age', 'N/A')
+                    gender = patient.get('Gender', 'N/A')
+                    diabetes = patient.get('Diabetes', 'N/A')
+                    hypertension = patient.get('Hypertension', 'N/A')
+                    kidney_cause = patient.get('Kidney_Failure_Cause', 'N/A')
+                    
+                    # Prediction data
+                    side_effects = patient.get('Predicted_Side_Effects', 'N/A')
+                    severity = patient.get('Predicted_Severity', 'N/A')
+                    timing = patient.get('Predicted_Timing', 'N/A')
+                    intervention = patient.get('Predicted_Intervention_Required', 'N/A')
+                    
+                    # Clinical measurements
+                    pre_bp = patient.get('Pre_Dialysis_Blood_Pressure', 'N/A')
+                    post_bp = patient.get('Post_Dialysis_Blood_Pressure', 'N/A')
+                    heart_rate = patient.get('Heart_Rate', 'N/A')
+                    creatinine = patient.get('Creatinine', 'N/A')
+                    hemoglobin = patient.get('Hemoglobin', 'N/A')
+                    potassium = patient.get('Potassium', 'N/A')
+                    
+                    # Dialysis parameters
+                    ktv = patient.get('KtV', 'N/A')
+                    urr = patient.get('URR', 'N/A')
+                    duration = patient.get('Dialysis_Duration_Hours', 'N/A')
+                    frequency = patient.get('Dialysis_Frequency_Per_Week', 'N/A')
+                    
+                    # Color coding for severity
+                    severity_color = '#ff6b6b' if severity == 'Severe' else '#ff9800' if severity == 'Moderate' else '#4caf50'
+                    intervention_color = '#ff6b6b' if intervention == 'Yes' else '#4caf50'
+                    
+                    html += f"""
+                    <div style="background-color: #2d2d2d; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); margin-bottom: 25px; padding: 20px; border-left: 5px solid #4fc3f7; border: 1px solid #444;">
+                        <!-- Patient Header -->
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 2px solid #444;">
+                            <div>
+                                <h3 style="color: #ffffff; margin: 0;">🏥 Patient ID: {patient_id}</h3>
+                            </div>
+                            <div style="text-align: right;">
+                                <div style="background-color: #333; padding: 10px 15px; border-radius: 8px; margin-bottom: 5px; border: 1px solid #555;">
+                                    <strong style="color: #ffffff;">Age:</strong> <span style="color: #4fc3f7;">{age}</span> | <strong style="color: #ffffff;">Gender:</strong> <span style="color: #4fc3f7;">{gender}</span>
+                                </div>
+                                <div style="background-color: #333; padding: 10px 15px; border-radius: 8px; border: 1px solid #555;">
+                                    <strong style="color: #ffffff;">Diabetes:</strong> <span style="color: #ff9800;">{diabetes}</span> | <strong style="color: #ffffff;">Hypertension:</strong> <span style="color: #ff9800;">{hypertension}</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Two Column Layout -->
+                        <div style="display: flex; gap: 20px; flex-wrap: wrap;">
+                            <!-- Left Column: Basic Info & Predictions -->
+                            <div style="flex: 1; min-width: 300px;">
+                                <!-- Medical History -->
+                                <div style="background-color: #333; padding: 15px; border-radius: 8px; margin-bottom: 15px; border: 1px solid #555;">
+                                    <h4 style="color: #ba68c8; margin-top: 0;">📋 Medical History</h4>
+                                    <p style="color: #ffffff;"><strong>Kidney Failure Cause:</strong> <span style="color: #4fc3f7;">{kidney_cause}</span></p>
+                                </div>
+                                
+                                <!-- Predictions -->
+                                <div style="background-color: #3e2723; padding: 15px; border-radius: 8px; margin-bottom: 15px; border-left: 4px solid #ff9800; border: 1px solid #555;">
+                                    <h4 style="color: #ffffff; margin-top: 0;">🔮 Predictions</h4>
+                                    <p style="color: #ffffff;"><strong>Side Effects:</strong> <span style="color: #4fc3f7;">{side_effects}</span></p>
+                                    <p style="color: #ffffff;"><strong>Severity:</strong> <span style="color: {severity_color}; font-weight: bold;">{severity}</span></p>
+                                    <p style="color: #ffffff;"><strong>Timing:</strong> <span style="color: #4fc3f7;">{timing}</span></p>
+                                    <p style="color: #ffffff;"><strong>Staff Intervention:</strong> <span style="color: {intervention_color}; font-weight: bold;">{intervention}</span></p>
+                                </div>
+                            </div>
+                            
+                            <!-- Right Column: Clinical Data -->
+                            <div style="flex: 1; min-width: 300px;">
+                                <!-- Vital Signs -->
+                                <div style="background-color: #1e3a8a; padding: 15px; border-radius: 8px; margin-bottom: 15px; border-left: 4px solid #4fc3f7; border: 1px solid #555;">
+                                    <h4 style="color: #ffffff; margin-top: 0;">🩺 Vital Signs</h4>
+                                    <p style="color: #ffffff;"><strong>Pre-Dialysis BP:</strong> <span style="color: #4fc3f7;">{pre_bp}</span></p>
+                                    <p style="color: #ffffff;"><strong>Post-Dialysis BP:</strong> <span style="color: #4fc3f7;">{post_bp}</span></p>
+                                    <p style="color: #ffffff;"><strong>Heart Rate:</strong> <span style="color: #4fc3f7;">{heart_rate}</span> bpm</p>
+                                </div>
+                                
+                                <!-- Lab Values -->
+                                <div style="background-color: #4a2c2a; padding: 15px; border-radius: 8px; margin-bottom: 15px; border-left: 4px solid #ff6b6b; border: 1px solid #555;">
+                                    <h4 style="color: #ffffff; margin-top: 0;">🧪 Lab Values</h4>
+                                    <p style="color: #ffffff;"><strong>Creatinine:</strong> <span style="color: #4fc3f7;">{creatinine}</span> mg/dL</p>
+                                    <p style="color: #ffffff;"><strong>Hemoglobin:</strong> <span style="color: #4fc3f7;">{hemoglobin}</span> g/dL</p>
+                                    <p style="color: #ffffff;"><strong>Potassium:</strong> <span style="color: #4fc3f7;">{potassium}</span> mEq/L</p>
+                                </div>
+                                
+                                <!-- Dialysis Parameters -->
+                                <div style="background-color: #1b5e20; padding: 15px; border-radius: 8px; border-left: 4px solid #4caf50; border: 1px solid #555;">
+                                    <h4 style="color: #ffffff; margin-top: 0;">💉 Dialysis Parameters</h4>
+                                    <p style="color: #ffffff;"><strong>KtV:</strong> <span style="color: #4fc3f7;">{ktv}</span></p>
+                                    <p style="color: #ffffff;"><strong>URR:</strong> <span style="color: #4fc3f7;">{urr}</span>%</p>
+                                    <p style="color: #ffffff;"><strong>Duration:</strong> <span style="color: #4fc3f7;">{duration}</span> hours</p>
+                                    <p style="color: #ffffff;"><strong>Frequency:</strong> <span style="color: #4fc3f7;">{frequency}</span> times/week</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    """
+                
+                html += f"""
+                </div>
+                <div style="text-align: center; color: #b0b0b0; font-size: 12px; margin-top: 20px;">
+                    <p>📊 Last updated: {datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}</p>
+                </div>
+                """
+                
+                return html
+                
+            except Exception as e:
+                logger.error(f"Error retrieving patient details: {str(e)}")
+                import traceback
+                logger.error(traceback.format_exc())
+                return f"<p>Error retrieving patient details: {str(e)}</p>"
+        
+        # Add refresh button for patient details
+        with gr.Row():
+            refresh_details_btn = gr.Button("Refresh Patient Details")
+            
+        # Add display for patient details
+        patient_details_display = gr.HTML(label="Patient Details")
+        
+        # Connect refresh button
+        refresh_details_btn.click(
+            fn=get_patient_details,
+            inputs=[],
+            outputs=[patient_details_display]
+        )
+        
+        # Load patient details on page load
+        demo.load(
+            fn=get_patient_details,
+            inputs=[],
+            outputs=[patient_details_display]
+        )
+
+        # Add dynamic footer
         gr.Markdown(
-            """
+            f"""
             <div style="text-align: center; margin-top: 20px; color: #888;">
-                <p>™ Data Refreshed: Feb 2026</p>
+                <p>™ Data Last Updated: {datetime.datetime.now().strftime('%B %Y')}</p>
             </div>
             """
         )
