@@ -1089,20 +1089,20 @@ with gr.Blocks(title="Dialysis Patient Data Collection", css="""
                         
                         recent_patients = recent_patients[display_cols]
                         
-                        # Format the HTML table
-                        html = "<h3>Recent Patient Records</h3>"
-                        html += "<table style='width:100%; border-collapse: collapse; font-size: 0.9em;'>"
-                        html += "<tr style='background-color: #f2f2f2;'>"
+                        # Format the HTML table with dark mode optimization
+                        html = "<h3 style='color: #ffffff; margin-bottom: 15px;'>Recent Patient Records</h3>"
+                        html += "<table style='width:100%; border-collapse: collapse; font-size: 0.9em; background-color: #2d2d2d;'>"
+                        html += "<tr style='background-color: #444;'>"
                         
                         for col in display_cols:
-                            html += f"<th style='border: 1px solid #ddd; padding: 6px;'>{col}</th>"
+                            html += f"<th style='border: 1px solid #555; padding: 8px; color: #ffffff; font-weight: bold;'>{col}</th>"
                         
                         html += "</tr>"
                         
                         for _, row in recent_patients.iterrows():
-                            html += "<tr>"
+                            html += "<tr style='background-color: #333;'>"
                             for col in display_cols:
-                                html += f"<td style='border: 1px solid #ddd; padding: 6px;'>{row[col]}</td>"
+                                html += f"<td style='border: 1px solid #555; padding: 6px; color: #ffffff;'>{row[col]}</td>"
                             html += "</tr>"
                         
                         html += "</table>"
@@ -1185,10 +1185,30 @@ with gr.Blocks(title="Dialysis Patient Data Collection", css="""
                 diabetes_count = patient_df['Diabetes'].value_counts().get('Yes', 0) if 'Diabetes' in patient_df.columns else 0
                 hypertension_count = patient_df['Hypertension'].value_counts().get('Yes', 0) if 'Hypertension' in patient_df.columns else 0
                 
-                # Dialysis parameters statistics
-                avg_ktv = patient_df['KtV'].mean() if 'KtV' in patient_df.columns else 0
-                avg_urr = patient_df['URR'].mean() if 'URR' in patient_df.columns else 0
-                avg_dialysis_duration = patient_df['Dialysis_Duration_Hours'].mean() if 'Dialysis_Duration_Hours' in patient_df.columns else 0
+                # Dialysis parameters statistics with error handling
+                avg_ktv = 0
+                if 'KtV' in patient_df.columns:
+                    try:
+                        ktv_series = pd.to_numeric(patient_df['KtV'], errors='coerce')
+                        avg_ktv = ktv_series.mean()
+                    except:
+                        avg_ktv = 0
+                
+                avg_urr = 0
+                if 'URR' in patient_df.columns:
+                    try:
+                        urr_series = pd.to_numeric(patient_df['URR'], errors='coerce')
+                        avg_urr = urr_series.mean()
+                    except:
+                        avg_urr = 0
+                
+                avg_dialysis_duration = 0
+                if 'Dialysis_Duration_Hours' in patient_df.columns:
+                    try:
+                        duration_series = pd.to_numeric(patient_df['Dialysis_Duration_Hours'], errors='coerce')
+                        avg_dialysis_duration = duration_series.mean()
+                    except:
+                        avg_dialysis_duration = 0
                 
                 # Blood pressure statistics
                 avg_systolic = []
@@ -1206,10 +1226,31 @@ with gr.Blocks(title="Dialysis Patient Data Collection", css="""
                 avg_systolic = sum(avg_systolic) / len(avg_systolic) if avg_systolic else 0
                 avg_diastolic = sum(avg_diastolic) / len(avg_diastolic) if avg_diastolic else 0
                 
-                # Lab values statistics
-                avg_creatinine = patient_df['Creatinine'].mean() if 'Creatinine' in patient_df.columns else 0
-                avg_hemoglobin = patient_df['Hemoglobin'].mean() if 'Hemoglobin' in patient_df.columns else 0
-                avg_potassium = patient_df['Potassium'].mean() if 'Potassium' in patient_df.columns else 0
+                # Lab values statistics with error handling
+                avg_creatinine = 0
+                if 'Creatinine' in patient_df.columns:
+                    try:
+                        # Convert to numeric, handling non-numeric values
+                        creatinine_series = pd.to_numeric(patient_df['Creatinine'], errors='coerce')
+                        avg_creatinine = creatinine_series.mean()
+                    except:
+                        avg_creatinine = 0
+                
+                avg_hemoglobin = 0
+                if 'Hemoglobin' in patient_df.columns:
+                    try:
+                        hemoglobin_series = pd.to_numeric(patient_df['Hemoglobin'], errors='coerce')
+                        avg_hemoglobin = hemoglobin_series.mean()
+                    except:
+                        avg_hemoglobin = 0
+                
+                avg_potassium = 0
+                if 'Potassium' in patient_df.columns:
+                    try:
+                        potassium_series = pd.to_numeric(patient_df['Potassium'], errors='coerce')
+                        avg_potassium = potassium_series.mean()
+                    except:
+                        avg_potassium = 0
                 
                 # Recent activity
                 recent_records = 0
